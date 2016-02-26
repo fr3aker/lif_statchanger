@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!--
+Web interface for editing Life is Feudal: Your Own fight skill attributes
+Copyright (c) 2016 Conrad Lampe
+Released under MIT license
+-->
+<title>LiF:YO Combat Stats Selector</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<script type="text/javascript" src="https://code.jquery.com/jquery-2.2.0.min.js"></script>
+<script type="text/javascript">
+'use strict';
+const skillcap = 600;
+const max_attribute_number = 150;
+const min_attribute_number = 10;
+const attribute_modifier = 1000000;
+const skill_modifier = 10000000;
+const attributes = [ 'strength', 'agility', 'constitution', 'willpower', 'intellect' ];
+let localize_words_map = [];
+localize_words_map['de'] = {
+        agility: 'Beweglichkeit',
+        constitution: 'Vitalität',
+        intellect: 'Intellekt',
+        strength: 'Stärke',
+        willpower: 'Willenskraft',
+        lastname: 'Nachname',
+        total: 'Gesamt',
+        of: 'von',
+        invalid: 'ungültig',
+        Attributes: 'Attribute',
+        Skills: 'Fertigkeiten',
+        requires: 'benötigt',
+        Save: 'Speichern'
+    };
+localize_words_map['de']['First name'] = 'Vorname';
+localize_words_map['de']['Last name'] = 'Nachname';
+localize_words_map['de']['Change Character'] = 'Character wechseln';
+
+let localize_words = {}; //localize_words_map['de'];
+let lang = window.location.hash.substring(1);
+if (lang) {
+    if (localize_words_map[lang] != undefined)
+        localize_words = localize_words_map[lang];
+    else
+        localize_words = {};
+}
+
+function changeLang() {
+    let value = this.options[this.selectedIndex].value;
+    window.location = window.location.pathname + '#' + value;
+    location.reload();
+};
+
+function localize(word) {
+    let out = localize_words[word];
+    return out === undefined ? word : out;
+};
+
+function get_attribute_array() {
+    let ret = {};
+    $('.attribute').each(function(i, e) {
+        ret[e.name] = e.value*attribute_modifier;
+    })
+    return ret;
+};
+
+function get_skill_array() {
+    let ret = {};
+    $('.skill').each(function(i, e) {
+        ret[$(e).data('skill').id] = e.value*skill_modifier;
+    })
+    return ret;
+};
+
+function submit_stats(e) {
+    e.preventDefault();
+    let data = {
+        firstname: $('#character_firstname').val(),
+        lastname: $('#character_lastname').val(),
+        attributes: get_attribute_array(),
+        skills: get_skill_array()
+    };
+    $.ajax({
+        type: 'PUT',
+        contentType: 'application/json; charset=utf-8',
+        url: 'skills',
+        data: JSON.stringify(data),
+        success: function() { alert(localize('Update successful.')); },
+        error: function(jqXHR) {
+            alert(localize('Error') + ': ' + localize(jqXHR.statusText));
+        }
+    });
+};
+
+function get_max_skill_points() {
+    return skillcap + parseInt($('#attribute_intellect').val()) - 10;
+};
+
+function attribute_update(e) {
+    let attribute = this.name;
+    let value = this.value;
+    let total = 0;
+    $('.attribute').each(function(i, e) {
+        total += parseInt(e.value);
+    });
+    
+    if (total <= max_attribute_number) {
+        $('#attribute_total > .value').text(total);
+    } else {
+        $('#attribute_total > .value').html('<span class="red">' + total + '</span>');
+    }
+    $('#attribute_label_' + attribute).text(value);
+    
+    if (attribute === 'intellect') {
+        $('#skills_total > .extra').text(localize('of') + ' ' + get_max_skill_points());
+    }
+};
+
+function skill_update() {
+    let data = $(this).data('skill');
+    if (data['parentid'] !== null) {
+        let parent = $('#skill_' + data['parentid']);
+        if (parent.val() < 30 || (parent.val() < 60 && this.value >= 30)) {
+            this.value = $(this).data('old');
+            alert(localize(data['name']) + ' ' + localize('requires') + ' ' + localize(parent.data('skill')['name']));
+            return false;
+        }
+    }
+    
+    let total = 0;
+    $('.skill').each(function(i, e) {
+        total += parseInt(e.value);
+    });
+
+    if (total <= get_max_skill_points()) {
+        $('#skills_total > .value').text(total);
+    }
+    else {
+        $('#skills_total > .value').html('<span class="red">' + total + '</span>');
+    }
+    
+    $(this).data('old', this.value);
+};
+
+function get_language_select() {
+    return $('<div>', {
+            id: 'attribute_lang'
+        }).append($('<select>', {
+                change: changeLang
+            }).append($('<option>', {
+                value: 'de',
+                text: 'deutsch',
+                selected: lang == 'de'
+            })).append($('<option>', {
+                value: 'en',
+                text: 'english',
+                selected: lang == 'en' || lang === ""
+            })
+        ));
+}
+
+function get_skills_dom(skills) {
+    let total = 0;
+
+    let skill_dom = $('<div>', {
+            id: 'skills_main',
+            class: 'container'
+        }).append($('<h1>', { text: localize("Skills")}));
+        
+    skills.forEach(function(e, i) {
+        let name = e['name'];
+        let value = parseInt(e['value']/skill_modifier);
+        total += value;
+        
+        $('<div>').append(
+            $('<span>', {
+                class: 'label',
+                text: localize(name)
+            })
+        ).append(
+            $('<input>', {
+                type: "number",
+                id: 'skill_' + e['id'],
+                min: 0,
+                max: 100,
+                step: 1,
+                value: value,
+                class: 'skill',
+                name: name,
+                change: skill_update
+            }).data('skill', e).data('old', value)
+        ).appendTo(skill_dom);
+    })
+    
+    skill_dom.append($('<div>', {
+            id: 'skills_total'
+        }).append($('<span>', {
+            class: 'label',
+            text: localize('total')
+        })).append($('<span>', {
+            class: 'value',
+            text: total
+        })).append($('<span>', {
+            class: 'extra',
+            text: localize('of') + ' ' + get_max_skill_points()
+        })));
+    return skill_dom;
+}
+
+function get_attribute_dom(attr) {
+    let total = 0;
+
+    let attribute = $('<div>', {
+            id: 'statspicker_main',
+            class: 'container'
+        }).append($('<h1>', { text: localize("Attributes")}));
+
+    attributes.forEach(function(e, i) {
+        let value = parseInt(attr[e]/attribute_modifier);
+        total += value;
+        
+        $('<div>', { class: 'sliderbox' }).append(
+            $('<span>', {
+                class: 'label',
+                text: localize(e)
+            })
+        ).append(
+            $('<input>', {
+                type: "number",
+                min: 10,
+                max: 100,
+                step: 1,
+                value: value,
+                id: 'attribute_' + e,
+                name: e,
+                class: 'attribute',
+                change: attribute_update
+            })
+        ).appendTo(attribute);
+    })
+        
+    attribute.append($('<div>', {
+            id: 'attribute_total'
+        }).append($('<span>', {
+            class: 'label',
+            text: localize('total')
+        })).append($('<span>', {
+            class: 'value',
+            text: total
+        })).append($('<span>', {
+            class: 'extra',
+            text: localize('of') + ' 150'
+        })));
+    return attribute;
+}
+
+function get_character_name_dom() {
+    function update_charater(e) {
+        $('#statschanger').remove();
+        $('<form>', {
+                id: 'statschanger',
+                submit: submit_stats
+        }).appendTo('body')
+            .append(get_attribute_dom(e['attributes']))
+            .append(get_skills_dom(e['skills']))
+            .append($('<input>', {
+                type: 'submit',
+                name: 'stats_submit',
+                value: localize('Save')
+            }));
+    };
+
+    return $('<form>', {
+                id: 'character_name',
+                submit: function(e) {
+                    e.preventDefault();
+                    $.ajax({
+                        type: 'POST',
+                        url: 'skills',
+                        data: {
+                            firstname: $('#character_firstname').val(),
+                            lastname: $('#character_lastname').val() },
+                        success: update_charater,
+                        dataType: 'json',
+                        error: function(jqXHR, text) {
+                            $('#statschanger').remove();
+                            if (jqXHR.status == 403) alert(localize('Character name invalid or no PVP character.'));
+                            else alert(localize('Sorry, unknown error happened: ') + text);
+                        }
+                    })
+                }
+            })
+            .append($('<div>')
+                .append($('<span>', {
+                        class: 'label',
+                        text: localize('First name')
+                    })
+                ).append($('<input>', {
+                    type: 'text',
+                    id: 'character_firstname',
+                    name: 'firstname',
+                    maxlength: 9,
+                    required: true
+                })
+            )).append($('<div>')
+                .append($('<span>', {
+                        class: 'label',
+                        text: localize('Last name')
+                    })
+                ).append($('<input>', {
+                    type: 'text',
+                    id: 'character_lastname',
+                    name: 'lastname',
+                    maxlength: 15,
+                    required: true
+                })
+            )).append($('<input>', {
+                type: 'submit',
+                name: 'character_submit',
+                value: localize('Change Character')
+            }));
+}
+
+function run() {
+    $('body').append(get_language_select())
+    .append(get_character_name_dom());
+};
+</script>
+<style>
+.label {
+    width: 15em;
+    display: inline-block;
+    text-align: right;
+    padding-right: 1em;
+}
+.extra {
+    padding-left: 0.2em;
+}
+.red {
+    color: red;
+}
+#attribute_nick .value {
+    background-color: light-grey;
+    width: auto;
+}
+</style>
+</head>
+<body onload="run()">
